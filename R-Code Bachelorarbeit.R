@@ -1,13 +1,13 @@
 
 library(readxl) # einlesen von csv Dateien
-library(vars) # für VAR Analysen
+library(vars) # fÃ¼r VAR Analysen
 library(ggplot2) # zum plotten
 library(dplyr)
-library(Metrics) # für mse etc.
-library(lmtest) # Für Granger Kausalität und statistische Tests
-library(tseries) # zum testen von Stationarität durch adf
-library(NlinTS) # zum testen von Stationarität durch ad
-library(olsrr) # Für Variablen Selection (Forword etc.)
+library(Metrics) # fÃ¼r mse etc.
+library(lmtest) # FÃ¼r Granger KausalitÃ¤t und statistische Tests
+library(tseries) # zum testen von StationaritÃ¤t durch adf
+library(NlinTS) # zum testen von StationaritÃ¤t durch ad
+library(olsrr) # FÃ¼r Variablen Selection (Forword etc.)
 
 
 IP_original <- read.delim("~/TU Dortmund/Bachelorarbeit/Industrieproduktion.txt", header=FALSE) # Ab 12.2000 bis 08.2024
@@ -66,7 +66,7 @@ EPU_train <- ts(EPU[1:228])
 
 temp_Arbeit <- data.frame(Arbeit = Arbeit, x = 1:284)
 ggplot(temp_Arbeit, aes(x = x, y = Arbeit)) +
-   geom_line()
+  geom_line()
 
 temp_VPI <- data.frame(VPI = VPI, x = 1:284)
 ggplot(temp_VPI, aes(x = x, y = VPI)) +
@@ -94,11 +94,11 @@ plot_EPU <- data.frame(EPU = EPU, x = 1:284)
 ggplot(plot_EPU, aes(x = x, y = EPU)) +
   geom_line()
 
-  
 
 
 
-# Test auf Stationarität
+
+# Test auf StationaritÃ¤t
 
 # Dickey-Fuller Test 
 df_test_Zins <- df.test(Zins_train, 1)
@@ -119,7 +119,7 @@ df_test_EPU$summary()
 
 #### Ablauf einer Prediction ####
 
-# AIC und BIC berechnen für unterschiedliche lags
+# AIC und BIC berechnen fÃ¼r unterschiedliche lags
 'min_BIC <- function(...){
   var <- ts.union(...)
   aic <- numeric(24)
@@ -141,49 +141,42 @@ combine_vectors <- function(...){
 #temp <- combine_vectors(IP_difflog[168:182], Zins[168:182],
 #                         Arbeit[168:182], VPI[168:182])
 
-prediction <- function(features, coeff){
-  result <- sum(features * unlist(coeff)[-(length(features) + 1)]) +
-    as.numeric(unlist(coeff)[length(features) + 1])
-  
-  return(result)
-}
-
 
 
 # Erstellung von rolling Window Funktion
 
-RW <- function(target, features, coeff, start, end, lag){
-  h <- start:end
-  result <- numeric(length(start:end))
-  error <- numeric(length(start:end))
-  for(i in 1:length(start:end)){
-    feat_sort <- combine_vectors(features[(h[i]-lag):(h[i]-1),])
-    result[i] <- prediction(feat_sort, coeff) 
-    error[i] <- target[h[i]] - result[i]
+
+
+
+
+prediction <- function(features, coeff){
+  result <- numeric(ncol(coeff))
+  feat_sort <- combine_vectors(features)
+  for(i in 1:ncol(coeff)){
+    result[i] <- sum(feat_sort * coeff[,i][-(nrow(coeff))]) +
+      as.numeric(coeff[,i][(nrow(coeff))])
   }
-  df <- data.frame('Wahrer Wert' = target[h], 'Prediction' = result,
-                   'Error' = error)
+  return(result)
+}
+
+prediction(features[237:239,], df_coeff)
+
+RW <- function(features, coeff, start, end, lag){
+  h <- start:end
+  result <- as.data.frame(matrix(0, length(t), ncol(features)))
+  error <- as.data.frame(matrix(0, length(t), ncol(features)))
+  for(i in 1:length(start:end)){
+    result[i,] <- prediction(features[(h[i]-lag):(h[i]-1),], coeff) 
+    error[i,] <- rev(features[h[i],]) - result[i,]
+  }
+  df <- list('Wahrer Wert' = df_features[h,], 'Prediction' = result,
+             'Error' = error)
   
   return(df)
 }
 
-RW_2step <- function(target, features, coeff, start, end, lag){
-  h <- start:end
-  result <- numeric(length(start:end))
-  error <- numeric(length(start:end))
-  for(i in 1:length(start:end)){
-    feat_sort <- combine_vectors(features[(h[i]-lag):(h[i]-2),])
-    feat_sort <- c(pred_IP$Prediction[i], pred_Zins$Prediction[i],
-                   pred_Arbeit$Prediction[i], pred_VPI$Prediction[i],
-                   feat_sort)
-    result[i] <- prediction(feat_sort, coeff) 
-    error[i] <- target[h[i]] - result[i]
-  }
-  df <- data.frame('Wahrer Wert' = target[h], 'Prediction' = result,
-                   'Error' = error)
-  
-  return(df)
-}
+RW(df_features, df_coeff, 229, 284, 3)
+
 
 
 #### Benchmark Model AR ####
@@ -245,69 +238,47 @@ df_features <- data.frame(VPI, Arbeit, Zins, IP_difflog)
 
 # Anzahl lags durch BIC herausfinden
 
-#VARselect(ts.union(IP_train, Zins_train,
-#                   Arbeit_train, VPI_train), lag.max = 24)
-
-
 lag <- as.numeric( VARselect(df_features, 24, type = "const")$selection[3])
-# Schätzung der Koeffizienten
+# SchÃ¤tzung der Koeffizienten
 est <- VAR(ts.union(IP_train, Zins_train,
                     Arbeit_train, VPI_train), p = lag)
 summary(est)
+df_coeff <- data.frame(summary(est)$varresult$IP_train$coefficients[,1],
+                       summary(est)$varresult$Zins_train$coefficients[,1],
+                       summary(est)$varresult$Arbeit_train$coefficients[,1],
+                       summary(est)$varresult$VPI_train$coefficients[,1])
 
+pred <- RW(df_features, df_coeff, 229, 284, 3)
 
-pred_IP <- RW(df_features$IP_difflog, df_features,
-                est$varresult$IP_train[1], 229, 284, lag = lag)
-pred_IP
-mean_pred_IP <- mean(abs(pred_IP$Error))
-rmse_pred_IP <- Metrics::rmse(pred_IP$Wahrer.Wert, pred_IP$Prediction)
-
-pred_IP_2step <- RW_2step(df_features$IP_difflog, df_features, 
-   est$varresult$IP_train[1], 230, 284, lag = lag)
-pred_IP_2step
-rmse_pred_IP_2step <- Metrics::rmse(pred_IP_2step$Wahrer.Wert,
-                                    pred_IP_2step$Prediction)
-
-
-pred_Zins <- RW(df_features$Zins, df_features,
-           est$varresult$Zins_train[1],229, 284, lag = lag)
-pred_Zins
-mean_pred_Zins <- mean(abs(pred_Zins$Error))
-rmse_pred_Zins <- Metrics::rmse(pred_Zins$Wahrer.Wert, pred_Zins$Prediction)
-
-pred_Arbeit <- RW(df_features$Arbeit, df_features,
-                est$varresult$Arbeit_train[1], 229, 284, lag = lag)
-pred_Arbeit
-mean_pred_Arbeit <- mean(abs(pred_Arbeit$Error))
-rmse_pred_Arbeit <- Metrics::rmse(pred_Arbeit$Wahrer.Wert, pred_Arbeit$Prediction)
-
-pred_VPI <- RW(df_features$VPI, df_features,
-                est$varresult$VPI_train[1], 229, 284, lag = lag)
-pred_VPI
-mean_pred_VPI <- mean(abs(pred_VPI$Error))
-rmse_pred_VPI <- Metrics::rmse(pred_VPI$Wahrer.Wert, pred_VPI$Prediction)
-
+rmse_pred_IP <- Metrics::rmse(pred$`Wahrer Wert`$IP_difflog, pred$Prediction$V1)
+rmse_pred_Zins <- Metrics::rmse(pred$`Wahrer Wert`$Zins, pred$Prediction$V2)
+rmse_pred_Arbeit <- Metrics::rmse(pred$`Wahrer Wert`$Arbeit, pred$Prediction$V3)
+rmse_pred_VPI <- Metrics::rmse(pred$`Wahrer Wert`$VPI, pred$Prediction$V4)
 
 # 95% Intervall
 temp$covres[1,1]
 
 # plots plots plots
 
-ggplot(pred_IP, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = pred$`Wahrer Wert`$IP_difflog,
+                  Prediction = pred$Prediction$V1), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(pred_Zins, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = pred$`Wahrer Wert`$Zins,
+                  Prediction = pred$Prediction$V2), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(pred_Arbeit, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = pred$`Wahrer Wert`$Arbeit,
+                  Prediction = pred$Prediction$V3), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(pred_VPI, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = pred$`Wahrer Wert`$VPI,
+                  Prediction = pred$Prediction$V4), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
 
 
@@ -317,56 +288,49 @@ IPI_df_features <- data.frame(IPI, VPI, Arbeit, Zins, IP_difflog)
 
 # Anzahl lags durch BIC herausfinden
 
-IPI_lag <- as.numeric( VARselect(IPI_df_features, 12, type = "const")$selection[3])
-
-# Schätzung der Koeffizienten
+IPI_lag <- as.numeric( VARselect(IPI_df_features, 24, type = "const")$selection[3])
+# SchÃ¤tzung der Koeffizienten
 IPI_est <- VAR(ts.union(IP_train, Zins_train,
-                    Arbeit_train, VPI_train, IPI_train), p = IPI_lag)
+                        Arbeit_train, VPI_train, IPI_train), p = IPI_lag)
 summary(IPI_est)
+IPI_df_coeff <- data.frame(summary(IPI_est)$varresult$IP_train$coefficients[,1],
+                           summary(IPI_est)$varresult$Zins_train$coefficients[,1],
+                           summary(IPI_est)$varresult$Arbeit_train$coefficients[,1],
+                           summary(IPI_est)$varresult$VPI_train$coefficients[,1],
+                           summary(IPI_est)$varresult$IPI_train$coefficients[,1])
 
+IPI_pred <- RW(IPI_df_features, IPI_df_coeff, 229, 284, 3)
 
-IPI_pred_IP <- RW(IPI_df_features$IP_difflog, IPI_df_features, 
-              IPI_est$varresult$IP_train[1], 229, 284, lag = IPI_lag)
-IPI_pred_IP
-mean_IPI_pred_IP <- mean(abs(IPI_pred_IP$Error))
-rmse_IPI_pred_IP <- Metrics::rmse(IPI_pred_IP$Wahrer.Wert, IPI_pred_IP$Prediction)
+rmse_IPI_pred_IP <- Metrics::rmse(IPI_pred$`Wahrer Wert`$IP_difflog, IPI_pred$Prediction$V1)
+rmse_IPI_pred_Zins <- Metrics::rmse(IPI_pred$`Wahrer Wert`$Zins, IPI_pred$Prediction$V2)
+rmse_IPI_pred_Arbeit <- Metrics::rmse(IPI_pred$`Wahrer Wert`$Arbeit, IPI_pred$Prediction$V3)
+rmse_IPI_pred_VPI <- Metrics::rmse(IPI_pred$`Wahrer Wert`$VPI, IPI_pred$Prediction$V4)
 
-IPI_pred_Zins <- RW(IPI_df_features$Zins, IPI_df_features,
-                    IPI_est$varresult$Zins_train[1], 229, 284, lag = IPI_lag)
-IPI_pred_Zins
-mean_IPI_pred_Zins <- mean(abs(IPI_pred_Zins$Error))
-rmse_IPI_pred_Zins <- Metrics::rmse(IPI_pred_Zins$Wahrer.Wert, IPI_pred_Zins$Prediction)
-
-IPI_pred_Arbeit <- RW(IPI_df_features$Arbeit, IPI_df_features,
-                      IPI_est$varresult$Arbeit_train[1], 229, 284, lag = IPI_lag)
-IPI_pred_Arbeit
-mean_IPI_pred_Arbeit <- mean(abs(IPI_pred_Arbeit$Error))
-rmse_IPI_pred_Arbeit <- Metrics::rmse(IPI_pred_Arbeit$Wahrer.Wert, IPI_pred_Arbeit$Prediction)
-
-IPI_pred_VPI <- RW(IPI_df_features$VPI, IPI_df_features,
-                   IPI_est$varresult$VPI_train[1], 229, 284, lag = IPI_lag)
-IPI_pred_VPI
-mean_IPI_pred_VPI <- mean(abs(IPI_pred_VPI$Error))
-rmse_IPI_pred_VPI <- Metrics::rmse(IPI_pred_VPI$Wahrer.Wert, IPI_pred_VPI$Prediction)
-
+# 95% Intervall
+temp$covres[1,1]
 
 # plots plots plots
 
-ggplot(IPI_pred_IP, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = IPI_pred$`Wahrer Wert`$IP_difflog,
+                  Prediction = IPI_pred$Prediction$V1), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(IPI_pred_Zins, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = IPI_pred$`Wahrer Wert`$Zins,
+                  Prediction = IPI_pred$Prediction$V2), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(IPI_pred_Arbeit, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = IPI_pred$`Wahrer Wert`$Arbeit,
+                  Prediction = IPI_pred$Prediction$V3), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(IPI_pred_VPI, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = IPI_pred$`Wahrer Wert`$VPI,
+                  Prediction = IPI_pred$Prediction$V4), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
+
 
 
 
@@ -379,58 +343,48 @@ UPI_df_features <- data.frame(UPI, VPI, Arbeit, Zins, IP_difflog)
 
 # Anzahl lags durch BIC herausfinden
 
-UPI_lag <- as.numeric( VARselect(UPI_df_features, 12, type = "const")$selection[3])
-
-# Schätzung der Koeffizienten
+UPI_lag <- as.numeric( VARselect(UPI_df_features, 24, type = "const")$selection[3])
+# SchÃ¤tzung der Koeffizienten
 UPI_est <- VAR(ts.union(IP_train, Zins_train,
                         Arbeit_train, VPI_train, UPI_train), p = UPI_lag)
 summary(UPI_est)
+UPI_df_coeff <- data.frame(summary(UPI_est)$varresult$IP_train$coefficients[,1],
+                           summary(UPI_est)$varresult$Zins_train$coefficients[,1],
+                           summary(UPI_est)$varresult$Arbeit_train$coefficients[,1],
+                           summary(UPI_est)$varresult$VPI_train$coefficients[,1],
+                           summary(UPI_est)$varresult$UPI_train$coefficients[,1])
 
+UPI_pred <- RW(UPI_df_features, UPI_df_coeff, 229, 284, 3)
 
-UPI_pred_IP <- RW(UPI_df_features$IP_difflog, UPI_df_features, 
-                  UPI_est$varresult$IP_train[1], 229, 284, lag = UPI_lag)
-UPI_pred_IP
-mean_UPI_pred_IP <- mean(abs(UPI_pred_IP$Error))
-rmse_UPI_pred_IP <- Metrics::rmse(UPI_pred_IP$Wahrer.Wert, UPI_pred_IP$Prediction)
+rmse_UPI_pred_IP <- Metrics::rmse(UPI_pred$`Wahrer Wert`$IP_difflog, UPI_pred$Prediction$V1)
+rmse_UPI_pred_Zins <- Metrics::rmse(UPI_pred$`Wahrer Wert`$Zins, UPI_pred$Prediction$V2)
+rmse_UPI_pred_Arbeit <- Metrics::rmse(UPI_pred$`Wahrer Wert`$Arbeit, UPI_pred$Prediction$V3)
+rmse_UPI_pred_VPI <- Metrics::rmse(UPI_pred$`Wahrer Wert`$VPI, UPI_pred$Prediction$V4)
 
-UPI_pred_Zins <- RW(UPI_df_features$Zins, UPI_df_features,
-                    UPI_est$varresult$Zins_train[1], 229, 284, lag = UPI_lag)
-UPI_pred_Zins
-mean_UPI_pred_Zins <- mean(abs(UPI_pred_Zins$Error))
-rmse_UPI_pred_Zins <- Metrics::rmse(UPI_pred_Zins$Wahrer.Wert, UPI_pred_Zins$Prediction)
-
-UPI_pred_Arbeit <- RW(UPI_df_features$Arbeit, UPI_df_features,
-                      UPI_est$varresult$Arbeit_train[1], 229, 284, lag = UPI_lag)
-UPI_pred_Arbeit
-mean_UPI_pred_Arbeit <- mean(abs(UPI_pred_Arbeit$Error), na.rm = TRUE)
-rmse_UPI_pred_Arbeit <- Metrics::rmse(UPI_pred_Arbeit$Wahrer.Wert, UPI_pred_Arbeit$Prediction)
-
-UPI_pred_VPI <- RW(UPI_df_features$VPI, UPI_df_features,
-                   UPI_est$varresult$VPI_train[1], 229, 284, lag = UPI_lag)
-UPI_pred_VPI
-mean_UPI_pred_VPI <- mean(abs(UPI_pred_VPI$Error), na.rm = TRUE)
-rmse_UPI_pred_VPI <- Metrics::rmse(UPI_pred_VPI$Wahrer.Wert, UPI_pred_VPI$Prediction)
-
+# 95% Intervall
+temp$covres[1,1]
 
 # plots plots plots
 
-ggplot(UPI_pred_IP, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = UPI_pred$`Wahrer Wert`$IP_difflog,
+                  Prediction = UPI_pred$Prediction$V1), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(UPI_pred_Zins, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = UPI_pred$`Wahrer Wert`$Zins,
+                  Prediction = UPI_pred$Prediction$V2), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(UPI_pred_Arbeit, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = UPI_pred$`Wahrer Wert`$Arbeit,
+                  Prediction = UPI_pred$Prediction$V3), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(UPI_pred_VPI, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
-
-
+ggplot(data.frame(Wahr = UPI_pred$`Wahrer Wert`$VPI,
+                  Prediction = UPI_pred$Prediction$V4), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
 
 
@@ -441,57 +395,48 @@ EPU_df_features <- data.frame(EPU, VPI, Arbeit, Zins, IP_difflog)
 
 # Anzahl lags durch BIC herausfinden
 
-EPU_lag <- as.numeric( VARselect(EPU_df_features, 12, type = "const")$selection[3])
-
-# Schätzung der Koeffizienten
+EPU_lag <- as.numeric( VARselect(EPU_df_features, 24, type = "const")$selection[3])
+# SchÃ¤tzung der Koeffizienten
 EPU_est <- VAR(ts.union(IP_train, Zins_train,
                         Arbeit_train, VPI_train, EPU_train), p = EPU_lag)
 summary(EPU_est)
+EPU_df_coeff <- data.frame(summary(EPU_est)$varresult$IP_train$coefficients[,1],
+                           summary(EPU_est)$varresult$Zins_train$coefficients[,1],
+                           summary(EPU_est)$varresult$Arbeit_train$coefficients[,1],
+                           summary(EPU_est)$varresult$VPI_train$coefficients[,1],
+                           summary(EPU_est)$varresult$EPU_train$coefficients[,1])
 
+EPU_pred <- RW(EPU_df_features, EPU_df_coeff, 229, 284, EPU_lag)
 
-EPU_pred_IP <- RW(EPU_df_features$IP_difflog, EPU_df_features, 
-                  EPU_est$varresult$IP_train[1], 229, 284, lag = EPU_lag)
-EPU_pred_IP
-mean_EPU_pred_IP <- mean(abs(EPU_pred_IP$Error))
-rmse_EPU_pred_IP <- Metrics::rmse(EPU_pred_IP$Wahrer.Wert, EPU_pred_IP$Prediction)
+rmse_EPU_pred_IP <- Metrics::rmse(EPU_pred$`Wahrer Wert`$IP_difflog, EPU_pred$Prediction$V1)
+rmse_EPU_pred_Zins <- Metrics::rmse(EPU_pred$`Wahrer Wert`$Zins, EPU_pred$Prediction$V2)
+rmse_EPU_pred_Arbeit <- Metrics::rmse(EPU_pred$`Wahrer Wert`$Arbeit, EPU_pred$Prediction$V3)
+rmse_EPU_pred_VPI <- Metrics::rmse(EPU_pred$`Wahrer Wert`$VPI, EPU_pred$Prediction$V4)
 
-EPU_pred_Zins <- RW(EPU_df_features$Zins, EPU_df_features,
-                    EPU_est$varresult$Zins_train[1], 229, 284, lag = EPU_lag)
-EPU_pred_Zins
-mean_EPU_pred_Zins <- mean(abs(EPU_pred_Zins$Error), na.rm = TRUE)
-rmse_EPU_pred_Zins <- Metrics::rmse(EPU_pred_Zins$Wahrer.Wert, EPU_pred_Zins$Prediction)
-
-EPU_pred_Arbeit <- RW(EPU_df_features$Arbeit, EPU_df_features,
-                      EPU_est$varresult$Arbeit_train[1], 229, 284, lag = EPU_lag)
-EPU_pred_Arbeit
-mean_EPU_pred_Arbeit <- mean(abs(EPU_pred_Arbeit$Error), na.rm = TRUE)
-rmse_EPU_pred_Arbeit <- Metrics::rmse(EPU_pred_Arbeit$Wahrer.Wert, EPU_pred_Arbeit$Prediction)
-
-EPU_pred_VPI <- RW(EPU_df_features$VPI, EPU_df_features,
-                   EPU_est$varresult$VPI_train[1], 229, 284, lag = EPU_lag)
-EPU_pred_VPI
-mean_EPU_pred_VPI <- mean(abs(EPU_pred_VPI$Error), na.rm = TRUE)
-rmse_EPU_pred_VPI <- Metrics::rmse(EPU_pred_VPI$Wahrer.Wert, EPU_pred_VPI$Prediction)
-
+# 95% Intervall
+temp$covres[1,1]
 
 # plots plots plots
 
-ggplot(EPU_pred_IP, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
- 
-ggplot(EPU_pred_Zins, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = IPI_pred$`Wahrer Wert`$IP_difflog,
+                  Prediction = IPI_pred$Prediction$V1), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(EPU_pred_Arbeit, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = IPI_pred$`Wahrer Wert`$Zins,
+                  Prediction = IPI_pred$Prediction$V2), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(EPU_pred_VPI, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = IPI_pred$`Wahrer Wert`$Arbeit,
+                  Prediction = IPI_pred$Prediction$V3), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
+ggplot(data.frame(Wahr = IPI_pred$`Wahrer Wert`$VPI,
+                  Prediction = IPI_pred$Prediction$V4), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
 
 
@@ -499,7 +444,7 @@ ggplot(EPU_pred_VPI, aes(x = 1:56)) +
 
 #### IPI Modell mit Subindexe #### 
 
-## basic modell und hinzufügen von selbst ausgewählten sub-Indexen  ##
+## basic modell und hinzufÃ¼gen von selbst ausgewÃ¤hlten sub-Indexen  ##
 
 subIPI_df_features <- data.frame(subIPI$Topic.2..News,
                                  subIPI$Topic.1..Central.Banks,
@@ -507,57 +452,55 @@ subIPI_df_features <- data.frame(subIPI$Topic.2..News,
 
 # Anzahl lags durch BIC herausfinden
 
-
 subIPI_lag <- as.numeric( VARselect(subIPI_df_features, 12, type = "const")$selection[3])
 
-# Schätzung der Koeffizienten
+# SchÃ¤tzung der Koeffizienten
 subIPI_est <- VAR(ts.union('IP_train' = ts(IP_train), 
-                             'Zins_train' = ts(Zins_train),
-                             'Arbeit_train' = ts(Arbeit_train),
-                             'VPI_train' = ts(VPI_train),
-                             'Central.Banks' = ts(subIPI_train$Topic.1..Central.Banks),
-                             'News' = ts(subIPI_train$Topic.2..News)), p = subIPI_lag)
+                           'Zins_train' = ts(Zins_train),
+                           'Arbeit_train' = ts(Arbeit_train),
+                           'VPI_train' = ts(VPI_train),
+                           'Central.Banks' = ts(subIPI_train$Topic.1..Central.Banks),
+                           'News' = ts(subIPI_train$Topic.2..News)), p = subIPI_lag)
 summary(subIPI_est)
 
+subIPI_df_coeff <- data.frame(summary(subIPI_est)$varresult$IP_train$coefficients[,1],
+                              summary(subIPI_est)$varresult$Zins_train$coefficients[,1],
+                              summary(subIPI_est)$varresult$Arbeit_train$coefficients[,1],
+                              summary(subIPI_est)$varresult$VPI_train$coefficients[,1],
+                              summary(subIPI_est)$varresult$Central.Banks$coefficients[,1],
+                              summary(subIPI_est)$varresult$News$coefficients[,1])
 
-subIPI_pred_IP <- RW(subIPI_df_features$IP_difflog, subIPI_df_features, 
-                     subIPI_est$varresult$IP_train[1], 229, 284, lag = subIPI_lag)
-subIPI_pred_IP
-rmse_subIPI_pred_IP <- Metrics::rmse(subIPI_pred_IP$Wahrer.Wert, subIPI_pred_IP$Prediction)
+subIPI_pred <- RW(subIPI_df_features, subIPI_df_coeff, 229, 284, 3)
 
-subIPI_pred_Zins <- RW(subIPI_df_features$Zins, subIPI_df_features,
-                       subIPI_est$varresult$Zins_train[1], 229, 284, lag = subIPI_lag)
-subIPI_pred_Zins
-rmse_subIPI_pred_Zins <- Metrics::rmse(subIPI_pred_Zins$Wahrer.Wert, subIPI_pred_Zins$Prediction)
+rmse_subIPI_pred_IP <- Metrics::rmse(subIPI_pred$`Wahrer Wert`$IP_difflog, subIPI_pred$Prediction$V1)
+rmse_subIPI_pred_Zins <- Metrics::rmse(subIPI_pred$`Wahrer Wert`$Zins, subIPI_pred$Prediction$V2)
+rmse_subIPI_pred_Arbeit <- Metrics::rmse(subIPI_pred$`Wahrer Wert`$Arbeit, subIPI_pred$Prediction$V3)
+rmse_subIPI_pred_VPI <- Metrics::rmse(subIPI_pred$`Wahrer Wert`$VPI, subIPI_pred$Prediction$V4)
 
-subIPI_pred_Arbeit <- RW(subIPI_df_features$Arbeit, subIPI_df_features,
-                         subIPI_est$varresult$Arbeit_train[1], 229, 284, lag = subIPI_lag)
-subIPI_pred_Arbeit
-rmse_subIPI_pred_Arbeit <- Metrics::rmse(subIPI_pred_Arbeit$Wahrer.Wert, subIPI_pred_Arbeit$Prediction)
-
-subIPI_pred_VPI <- RW(subIPI_df_features$VPI, subIPI_df_features,
-                      subIPI_est$varresult$VPI_train[1], 229, 284, lag = subIPI_lag)
-subIPI_pred_VPI
-rmse_subIPI_pred_VPI <- Metrics::rmse(subIPI_pred_VPI$Wahrer.Wert, subIPI_pred_VPI$Prediction)
-
+# 95% Intervall
+temp$covres[1,1]
 
 # plots plots plots
 
-ggplot(subIPI_pred_IP, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = subIPI_pred$`Wahrer Wert`$IP_difflog,
+                  Prediction = subIPI_pred$Prediction$V1), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(subIPI_pred_Zins, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = subIPI_pred$`Wahrer Wert`$Zins,
+                  Prediction = subIPI_pred$Prediction$V2), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(subIPI_pred_Arbeit, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = subIPI_pred$`Wahrer Wert`$Arbeit,
+                  Prediction = subIPI_pred$Prediction$V3), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(subIPI_pred_VPI, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = subIPI_pred$`Wahrer Wert`$VPI,
+                  Prediction = subIPI_pred$Prediction$V4), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
 
 
@@ -565,7 +508,7 @@ ggplot(subIPI_pred_VPI, aes(x = 1:56)) +
 # ### sub-UPI ###
 
 
-## basic modell und hinzufügen von selbst ausgewählten sub-Indexen  ##
+## basic modell und hinzufÃ¼gen von selbst ausgewÃ¤hlten sub-Indexen  ##
 
 subUPI_df_features <- data.frame(subUPI$Topic.13..German.Economy,
                                  subUPI$Topic.12..Central.banks,
@@ -577,7 +520,7 @@ subUPI_df_features <- data.frame(subUPI$Topic.13..German.Economy,
 
 subUPI_lag <- as.numeric( VARselect(subUPI_df_features, 12, type = "const")$selection[3])
 
-# Schätzung der Koeffizienten
+# SchÃ¤tzung der Koeffizienten
 subUPI_est <- VAR(ts.union('IP_train' = ts(IP_train), 
                            'Zins_train' = ts(Zins_train),
                            'Arbeit_train' = ts(Arbeit_train),
@@ -585,53 +528,54 @@ subUPI_est <- VAR(ts.union('IP_train' = ts(IP_train),
                            'EU Conflicts' = ts(subUPI_train$Topic.2..EU.Conflicts),
                            'Financial Markets' = ts(subUPI_train$Topic.10..Financial.Markets.II),
                            'Central Banks' = ts(subUPI_train$Topic.12..Central.banks),
-                           'German Economy' = ts(subUPI_train$Topic.13..German.Economy)), p = subUPI_lag)
+                           'German Economy' = ts(subUPI_train$Topic.13..German.Economy))[-c(1,2),], p = subUPI_lag)
 summary(subUPI_est)
 
+subUPI_df_coeff <- data.frame(summary(subUPI_est)$varresult$IP_train$coefficients[,1],
+                              summary(subUPI_est)$varresult$Zins_train$coefficients[,1],
+                              summary(subUPI_est)$varresult$Arbeit_train$coefficients[,1],
+                              summary(subUPI_est)$varresult$VPI_train$coefficients[,1],
+                              summary(subUPI_est)$varresult$EU.Conflicts$coefficients[,1],
+                              summary(subUPI_est)$varresult$Financial.Markets$coefficients[,1],
+                              summary(subUPI_est)$varresult$Central.Banks$coefficients[,1],
+                              summary(subUPI_est)$varresult$German.Economy$coefficients[,1])
 
-subUPI_pred_IP <- RW(subUPI_df_features$IP_difflog, subUPI_df_features, 
-                     subUPI_est$varresult$IP_train[1], 229, 284, lag = subUPI_lag)
-subUPI_pred_IP
-rmse_subUPI_pred_IP <- Metrics::rmse(subIPI_pred_IP$Wahrer.Wert, subIPI_pred_IP$Prediction)
+subUPI_pred <- RW(subUPI_df_features, subUPI_df_coeff, 229, 284, subUPI_lag)
 
-subUPI_pred_Zins <- RW(subUPI_df_features$Zins, subUPI_df_features,
-                       subUPI_est$varresult$Zins_train[1], 229, 284, lag = subUPI_lag)
-subUPI_pred_Zins
-rmse_subUPI_pred_Zins <- Metrics::rmse(subUPI_pred_Zins$Wahrer.Wert, subUPI_pred_Zins$Prediction)
+rmse_subUPI_pred_IP <- Metrics::rmse(subUPI_pred$`Wahrer Wert`$IP_difflog, subUPI_pred$Prediction$V1)
+rmse_subUPI_pred_Zins <- Metrics::rmse(subUPI_pred$`Wahrer Wert`$Zins, subUPI_pred$Prediction$V2)
+rmse_subUPI_pred_Arbeit <- Metrics::rmse(subUPI_pred$`Wahrer Wert`$Arbeit, subUPI_pred$Prediction$V3)
+rmse_subUPI_pred_VPI <- Metrics::rmse(subUPI_pred$`Wahrer Wert`$VPI, subUPI_pred$Prediction$V4)
 
-subUPI_pred_Arbeit <- RW(subUPI_df_features$Arbeit, subUPI_df_features,
-                         subUPI_est$varresult$Arbeit_train[1], 229, 284, lag = subUPI_lag)
-subUPI_pred_Arbeit
-rmse_subUPI_pred_Arbeit <- Metrics::rmse(subUPI_pred_Arbeit$Wahrer.Wert, subUPI_pred_Arbeit$Prediction)
-
-subUPI_pred_VPI <- RW(subUPI_df_features$VPI, subUPI_df_features,
-                      subUPI_est$varresult$VPI_train[1], 229, 284, lag = subUPI_lag)
-subUPI_pred_VPI
-rmse_subUPI_pred_VPI <- Metrics::rmse(subUPI_pred_VPI$Wahrer.Wert, subUPI_pred_VPI$Prediction)
-
+# 95% Intervall
+temp$covres[1,1]
 
 # plots plots plots
 
-ggplot(subIPI_pred_IP, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = subUPI_pred$`Wahrer Wert`$IP_difflog,
+                  Prediction = subUPI_pred$Prediction$V1), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(subIPI_pred_Zins, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = subUPI_pred$`Wahrer Wert`$Zins,
+                  Prediction = subUPI_pred$Prediction$V2), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(subIPI_pred_Arbeit, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = subUPI_pred$`Wahrer Wert`$Arbeit,
+                  Prediction = subUPI_pred$Prediction$V3), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
-ggplot(subIPI_pred_VPI, aes(x = 1:56)) +
-  geom_line(aes(y = Wahrer.Wert), color = 'darkred') +
-  geom_line(aes(y = Prediction), color = 'steelblue')
+ggplot(data.frame(Wahr = subUPI_pred$`Wahrer Wert`$VPI,
+                  Prediction = subUPI_pred$Prediction$V4), aes(x = 1:56)) +
+  geom_line(aes(y = Wahr, color = 'darkred')) +
+  geom_line(aes(y = Prediction, color = 'steelblue'))
 
 
 
 
-# Granger Kausalität
+# Granger KausalitÃ¤t
 
 
 grangertest(Zins~Arbeit, order = 3) # nope
@@ -672,69 +616,28 @@ library(bruceR)
 granger_causality(est)
 
 
-
-measured_mean_error <- data.frame('basic model' =
-                                    c(mean_pred_IP, mean_pred_Zins,
-                                      mean_pred_Arbeit, mean_pred_VPI),
-                                  'IPI model' =
-                                    c(mean_IPI_pred_IP, mean_IPI_pred_Zins,
-                                      mean_IPI_pred_Arbeit, mean_IPI_pred_VPI), 
-                                  'UPI model' =
-                                    c(mean_UPI_pred_IP, mean_UPI_pred_Zins,
-                                      mean_UPI_pred_Arbeit, mean_UPI_pred_VPI),
-                                  'EPU model' =
-                                    c(mean_EPU_pred_IP, mean_EPU_pred_Zins,
-                                      mean_EPU_pred_Arbeit, mean_EPU_pred_VPI),
-                                  'subIPI VS model' =
-                                    c(mean_subIPI_pred_IP, mean_subIPI_pred_Zins,
-                                      mean_subIPI_pred_Arbeit, mean_subIPI_pred_VPI),
-                                  'subUPI VS model' =
-                                    c(mean_subUPI_pred_IP, mean_subUPI_pred_Zins,
-                                      mean_subUPI_pred_Arbeit, mean_subUPI_pred_VPI),
-                                  row.names = c("IP", "Zins", "Arbeit", "VPI"))
-
-# measured_mse_error <- data.frame('basic model' =
-#                                     c(mse_pred_IP, mse_pred_Zins,
-#                                       mse_pred_Arbeit, mse_pred_VPI),
-#                                   'IPI model' =
-#                                     c(mse_IPI_pred_IP, mse_IPI_pred_Zins,
-#                                       mse_IPI_pred_Arbeit, mse_IPI_pred_VPI),
-#                                   'UPI model' =
-#                                     c(mse_UPI_pred_IP, mse_UPI_pred_Zins,
-#                                       mse_UPI_pred_Arbeit, mse_UPI_pred_VPI),
-#                                   'EPU model' =
-#                                     c(mse_EPU_pred_IP, mse_EPU_pred_Zins,
-#                                       mse_EPU_pred_Arbeit, mse_EPU_pred_VPI),
-#                                   'subIPI VS model' =
-#                                     c(mse_subIPI_pred_IP, mse_subIPI_pred_Zins,
-#                                       mse_subIPI_pred_Arbeit, mse_subIPI_pred_VPI),
-#                                   'subUPI VS model' =
-#                                     c(mse_subUPI_pred_IP, mse_subUPI_pred_Zins,
-#                                       mse_subUPI_pred_Arbeit, mse_subUPI_pred_VPI),
-#                                   row.names = c("IP", "Zins", "Arbeit", "VPI"))
-
 measured_rmse_error <- data.frame('AR model' =
                                     c(rmse_AR_IP, rmse_AR_Zins,
                                       rmse_AR_Arbeit, rmse_AR_VPI),
-                                 'basic model' =
-                                   c(rmse_pred_IP, rmse_pred_Zins,
-                                     rmse_pred_Arbeit, rmse_pred_VPI),
-                                 'IPI model' =
-                                   c(rmse_IPI_pred_IP, rmse_IPI_pred_Zins,
-                                     rmse_IPI_pred_Arbeit, rmse_IPI_pred_VPI), 
-                                 'UPI model' =
-                                   c(rmse_UPI_pred_IP, rmse_UPI_pred_Zins,
-                                     rmse_UPI_pred_Arbeit, rmse_UPI_pred_VPI),
-                                 'EPU model' =
-                                   c(rmse_EPU_pred_IP, rmse_EPU_pred_Zins,
-                                     rmse_EPU_pred_Arbeit, rmse_EPU_pred_VPI),
-                                 'subIPI model' =
-                                   c(rmse_subIPI_pred_IP, rmse_subIPI_pred_Zins,
-                                     rmse_subIPI_pred_Arbeit, rmse_subIPI_pred_VPI),
-                                 'subUPI model' =
-                                   c(rmse_subUPI_pred_IP, rmse_subUPI_pred_Zins,
-                                     rmse_subUPI_pred_Arbeit, rmse_subUPI_pred_VPI),
-                                 row.names = c("IP", "Zins", "Arbeit", "VPI"))
+                                  'basic model' =
+                                    c(rmse_pred_IP, rmse_pred_Zins,
+                                      rmse_pred_Arbeit, rmse_pred_VPI),
+                                  'IPI model' =
+                                    c(rmse_IPI_pred_IP, rmse_IPI_pred_Zins,
+                                      rmse_IPI_pred_Arbeit, rmse_IPI_pred_VPI), 
+                                  'UPI model' =
+                                    c(rmse_UPI_pred_IP, rmse_UPI_pred_Zins,
+                                      rmse_UPI_pred_Arbeit, rmse_UPI_pred_VPI),
+                                  'EPU model' =
+                                    c(rmse_EPU_pred_IP, rmse_EPU_pred_Zins,
+                                      rmse_EPU_pred_Arbeit, rmse_EPU_pred_VPI),
+                                  'subIPI model' =
+                                    c(rmse_subIPI_pred_IP, rmse_subIPI_pred_Zins,
+                                      rmse_subIPI_pred_Arbeit, rmse_subIPI_pred_VPI),
+                                  'subUPI model' =
+                                    c(rmse_subUPI_pred_IP, rmse_subUPI_pred_Zins,
+                                      rmse_subUPI_pred_Arbeit, rmse_subUPI_pred_VPI),
+                                  row.names = c("IP", "Zins", "Arbeit", "VPI"))
 
 
 
@@ -747,29 +650,154 @@ measured_rmse_error <- data.frame('AR model' =
 lrtest(est$varresult$IP_train, IPI_est$varresult$IP_train) # nope
 lrtest(est$varresult$IP_train, UPI_est$varresult$IP_train) # nope 
 lrtest(est$varresult$IP_train, EPU_est$varresult$IP_train) # nope
-lrtest(est$varresult$IP_train, subIPI_est_IP$model) # yep
-lrtest(est$varresult$IP_train, subUPI_est_IP$model) # yep
+lrtest(est$varresult$IP_train, subIPI_est$varresult$IP_train) # nope
+lrtest(est$varresult$IP_train, subUPI_est$varresult$IP_train) # yep
 
 # Zins
 
-lrtest(est$varresult$Zins_train, IPI_est$varresult$Zins_train)
-lrtest(est$varresult$Zins_train, UPI_est$varresult$Zins_train)
-lrtest(est$varresult$Zins_train, EPU_est$varresult$Zins_train)
-lrtest(est$varresult$Zins_train, subIPI_est_Zins$model)
-lrtest(est$varresult$Zins_train, subUPI_est_Zins$model)
+lrtest(est$varresult$Zins_train, IPI_est$varresult$Zins_train) # knapp nope
+lrtest(est$varresult$Zins_train, UPI_est$varresult$Zins_train) # yep
+lrtest(est$varresult$Zins_train, EPU_est$varresult$Zins_train) # yep
+lrtest(est$varresult$Zins_train, subIPI_est$varresult$Zins_train) # yep
+lrtest(est$varresult$Zins_train, subUPI_est$varresult$Zins_train) # yep
 
 # Arbeit
 
-lrtest(est$varresult$Arbeit_train, IPI_est$varresult$Arbeit_train)
-lrtest(est$varresult$Arbeit_train, UPI_est$varresult$Arbeit_train)
-lrtest(est$varresult$Arbeit_train, EPU_est$varresult$Arbeit_train)
-lrtest(est$varresult$Arbeit_train, subIPI_est_Arbeit$model)
-lrtest(est$varresult$Arbeit_train, subUPI_est_Arbeit$model)
+lrtest(est$varresult$Arbeit_train, IPI_est$varresult$Arbeit_train) # nope
+lrtest(est$varresult$Arbeit_train, UPI_est$varresult$Arbeit_train) # nope
+lrtest(est$varresult$Arbeit_train, EPU_est$varresult$Arbeit_train) # nope
+lrtest(est$varresult$Arbeit_train, subIPI_est$varresult$Arbeit_train) # knapp nope
+lrtest(est$varresult$Arbeit_train, subUPI_est$varresult$Arbeit_train) # yep 
 
 # VPI
 
 lrtest(est$varresult$VPI_train, IPI_est$varresult$VPI_train) # nope
 lrtest(est$varresult$VPI_train, UPI_est$varresult$VPI_train) # nope 
 lrtest(est$varresult$VPI_train, EPU_est$varresult$VPI_train) # nope
-lrtest(est$varresult$VPI_train, subIPI_est_VPI$model) # nope
-lrtest(est$varresult$VPI_train, subUPI_est_VPI$model) # nope
+lrtest(est$varresult$VPI_train, subIPI_est$varresult$VPI_train) # nope
+lrtest(est$varresult$VPI_train, subUPI_est$varresult$VPI_train) # yep
+
+
+
+
+
+
+
+
+
+
+
+
+#### 95%- Konfidenzintervall ####
+
+# Erstellen der Koeffizientenmatrizen A_i
+
+initialize_A <- function(coeff, lag){
+  list_coeff <- list()
+  for(i in 1:lag){
+    A <- diag(ncol(coeff))
+    for(j in 1:ncol(coeff)){
+      A[j,] <- coeff[,j][(1+(i-1)*ncol(coeff)):(i*ncol(coeff))]
+    }
+    list_coeff[[i]] <- A
+  }
+  return(list_coeff)
+}
+
+initialize_A(df_coeff, 3)
+
+# Rekusive Berechnung der Phi_i
+
+# Gerade nur möglich für j <= lag (soll aber nicht so sein)
+phi_rek <- function(list_coeff, lag){
+  if(lag == 0){
+    return(diag(ncol(list_coeff[[1]])))
+  }
+  
+  result_phi <- matrix(0, ncol(list_coeff[[1]]),
+                       ncol(list_coeff[[1]]))
+  
+  for(i in 1:lag){
+    result_phi <- result_phi + phi_rek(list_coeff, lag-i) %*% list_coeff[[i]] 
+  }
+  return(result_phi)
+}
+phi_rek(initialize_A(df_coeff, 3), 1)
+
+
+# Erstellung der (K x T) Matrix Y
+# Y <- t(rev(df_features[-c(1:lag),]))
+# Y_originial <-  t(rev(df_features))   # Y plus die ersten lag-Beobachtungen 
+# welche benötigt werden zum prognostizieren
+# der ersten lag-Elemente in Y
+
+
+initialize_Z_t <- function(features, t, lag) { 
+  Y = t(rev(features)) # Y plus die ersten lag Beobachtungen 
+  # welche benötigt werden zum prognostizieren
+  # der ersten lag Elemente in Y
+  
+  k <- nrow(Y)  # Anzahl der Variablen
+  
+  # Verzögerte Werte von t bis t-p+1
+  lagged_y <- as.vector(Y[, t:(t - lag + 1)])
+  
+  # Z_t als (kp+1) x 1 Matrix erstellen
+  Z_t <- matrix(c(1, lagged_y), nrow = k * lag + 1, ncol = 1)
+  
+  return(Z_t)
+}
+
+initialize_Z_t(df_features, 280, 3)
+
+# Einzelne Z_t als col in eine Matrix
+initialze_Z <- function(features, lag){
+  Z <- matrix(0, ncol(features)*lag+1, nrow(features)-lag)
+  for(i in 1:(nrow(features)-lag)){
+    Z[,i] <- initialize_Z_t(features, i-1+lag, lag)
+  }
+  return(Z)
+}
+
+initialze_Z(df_features[1:228,], 3)
+
+# Mit Z und Y die Covariance Matrix Sigma_u schätzen
+
+predict_covar <- function(features, lag, max_index) {
+  Y <- t(rev(features[1:max_index,]))[,-c(1:lag)]
+  Z <- initialze_Z(features[1:max_index,], lag)
+  K <- nrow(Y)
+  # Berechnung der Matrixprodukte
+  YY <- Y %*% t(Y)  # Y * Y'
+  YZ <- Y %*% t(Z)  # Y * Z'
+  ZZ <- Z %*% t(Z)  # Z * Z'
+  
+  # Invertierung von ZZ'
+  ZZ_inv <- solve(ZZ)
+  
+  # Berechnung von \hat{\Sigma}_u
+  Sigma_u_hat <- (1 / (T - K * lag - 1)) * (YY - YZ %*% ZZ_inv %*% t(YZ))
+  
+  return(Sigma_u_hat)
+}
+
+predict_covar(df_features, 3, 228)
+
+# Berechnung von Sigma_y(h)
+
+predict_sigma_y <- function(features, h, lag, max_index){
+  T <- max_index-lag
+  K <- ncol(features)
+  sigma_u_hat <- predict_covar(features, lag, max_index)
+  if(h == 1){
+    result <- ((T + K*lag + 1)/T) * sigma_u_hat
+    return(result)
+  }
+  if(h == 2){
+    
+  }
+}
+
+predict_sigma_y(df_features, 1, 3, 228)
+
+

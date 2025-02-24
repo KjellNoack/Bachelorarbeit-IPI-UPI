@@ -794,7 +794,8 @@ predict_sigma_y <- function(features, h, lag, max_index){
     return(result)
   }
   if(h == 2){
-    
+    A_1 <- initialize_A(df_coeff, lag)[[1]] # Phi_1 ist gleich A_i
+    sigma_y <- sigma_u_hat + A_1 %*% sigma_u_hat %*% t(A_i)
   }
 }
 
